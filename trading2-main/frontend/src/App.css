@@ -1,0 +1,114 @@
+/* Modern Forex Trading Platform Styles */
+.App {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+/* Smooth transitions for interactive elements */
+button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+/* Price animation effects */
+@keyframes priceFlash {
+  0% { background-color: rgba(34, 197, 94, 0.2); }
+  100% { background-color: transparent; }
+}
+
+.price-up {
+  animation: priceFlash 0.5s ease-out;
+}
+
+@keyframes priceFlashDown {
+  0% { background-color: rgba(239, 68, 68, 0.2); }
+  100% { background-color: transparent; }
+}
+
+.price-down {
+  animation: priceFlashDown 0.5s ease-out;
+}
+
+/* Custom scrollbar for positions list */
+.positions-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.positions-scroll::-webkit-scrollbar-track {
+  background: rgba(55, 65, 81, 0.3);
+  border-radius: 3px;
+}
+
+.positions-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+}
+
+.positions-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+/* Glass morphism effects for cards */
+.glass-card {
+  backdrop-filter: blur(16px);
+  background: rgba(31, 41, 55, 0.8);
+  border: 1px solid rgba(75, 85, 99, 0.3);
+}
+
+/* Profit/Loss color indicators */
+.profit-positive {
+  color: #10B981;
+}
+
+.profit-negative {
+  color: #EF4444;
+}
+
+/* Trading button hover effects */
+.buy-button:hover {
+  box-shadow: 0 10px 25px rgba(34, 197, 94, 0.3);
+}
+
+.sell-button:hover {
+  box-shadow: 0 10px 25px rgba(239, 68, 68, 0.3);
+}
+
+/* Responsive design adjustments */
+@media (max-width: 768px) {
+  .App {
+    padding: 1rem;
+  }
+  
+  .hero-section h1 {
+    font-size: 2.5rem;
+  }
+  
+  .price-card {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
+
+/* Loading states */
+.loading-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Focus states for accessibility */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.8);
+  outline-offset: 2px;
+}

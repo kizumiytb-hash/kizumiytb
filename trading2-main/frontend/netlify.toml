@@ -1,0 +1,19 @@
+# Netlify Deployment Configuration for Frontend
+# Place this file in /app/frontend/netlify.toml
+
+[build]
+  publish = "build"
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "18"
+  REACT_APP_BACKEND_URL = "https://your-backend-url.railway.app"
+  REACT_APP_STRIPE_PUBLISHABLE_KEY = "pk_live_51RuwrOHZf9SM4W1LDCUKkGqkfLi9YStYD2ZH61Ju84udI8T6etqXLSkwmGSlfgSbFTL3NWZoMnQ1Hg4NZJHsBN3700lJcRSzUI"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[context.production.environment]
+  NODE_ENV = "production"
