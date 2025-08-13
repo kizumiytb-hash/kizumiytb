@@ -27,6 +27,10 @@ stripe.api_key = STRIPE_API_KEY
 # Initialise FastAPI UNE SEULE FOIS
 app = FastAPI(title="Forex Broker API", version="2.0.0")
 
+@app.get("/")
+async def root():
+    return {"message": "Bienvenue sur l'API Forex Broker"}
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
