@@ -10,16 +10,24 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import random
 import math
 from dotenv import load_dotenv
-from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
+
+import stripe  # Stripe officiel
+
 from auth import hash_password, verify_password, create_access_token, get_current_user, get_current_user_optional
 
-# Load environment variables
+# Charge les variables d'environnement UNE SEULE FOIS
 load_dotenv()
 
-# FastAPI app initialization
+# Récupère la clé Stripe et configure la lib Stripe
+STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
+if not STRIPE_API_KEY:
+    raise Exception("STRIPE_API_KEY environment variable is required")
+stripe.api_key = STRIPE_API_KEY
+
+# Initialise FastAPI UNE SEULE FOIS
 app = FastAPI(title="Forex Broker API", version="2.0.0")
 
-# CORS middleware
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,15 +36,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
+# Connexion MongoDB
 MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = AsyncIOMotorClient(MONGO_URL)
 db = client.forex_broker
-
-# Stripe configuration using emergentintegrations
-STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
-if not STRIPE_API_KEY:
-    raise Exception("STRIPE_API_KEY environment variable is required")
 
 # Authentication Models
 class UserRegister(BaseModel):
@@ -88,8 +91,11 @@ class Order(BaseModel):
     volume: float
     open_price: float
     leverage: int
-    timestamp: datetime
+    timestamp: Optional[datetime] = None
     status: str = 'open'
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+
 
 class Position(BaseModel):
     user_id: str
@@ -103,6 +109,9 @@ class Position(BaseModel):
     profit_loss: float
     timestamp: datetime
     status: str = 'open'
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+
 
 class PriceData(BaseModel):
     symbol: str
@@ -171,20 +180,18 @@ async def simulate_prices():
     while True:
         for symbol in current_prices:
             base_price = current_prices[symbol]['base']
-            
-            # Random price movement (more volatile for Gold)
             volatility = 0.0005 if symbol == 'EURUSD' else 0.005
             change = random.uniform(-volatility, volatility)
-            
             new_price = base_price * (1 + change)
             current_prices[symbol]['bid'] = round(new_price, 5 if symbol == 'EURUSD' else 2)
-            current_prices[symbol]['ask'] = round(new_price, 5 if symbol == 'EURUSD' else 2)  # 0 pip spread
-            
-            # Update base occasionally for trend
+            current_prices[symbol]['ask'] = round(new_price, 5 if symbol == 'EURUSD' else 2)
             if random.random() < 0.1:
                 current_prices[symbol]['base'] = new_price
-        
-        await asyncio.sleep(1)  # Update every second
+        await asyncio.sleep(1)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(simulate_prices())
 
 # Trading endpoints
 @app.post("/api/orders")
