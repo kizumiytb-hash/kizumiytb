@@ -20,7 +20,7 @@ load_dotenv()
 
 # Récupère la clé Stripe et configure la lib Stripe
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
-if not STRIPE_API_KEY:pk_live_51RuwrOHZf9SM4W1LDCUKkGqkfLi9YStYD2ZH61Ju84udI8T6etqXLSkwmGSlfgSbFTL3NWZoMnQ1Hg4NZJHsBN3700lJcRSzUI
+if not STRIPE_API_KEY:
     raise Exception("STRIPE_API_KEY environment variable is required")
 stripe.api_key = STRIPE_API_KEY
 
