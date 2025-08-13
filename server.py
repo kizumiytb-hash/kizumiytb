@@ -1,37 +1,34 @@
-import os
 import uuid
 import asyncio
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
-from fastapi import FastAPI, HTTPException, Request, Depends, status
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, EmailStr
-from motor.motor_asyncio import AsyncIOMotorClient
 import random
-import math
+from datetime import datetime
+from typing import List, Dict, Optional
+
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
+from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
+import os
+import stripe
 
-import stripe  # Stripe officiel
-
-from auth import hash_password, verify_password, create_access_token, get_current_user, get_current_user_optional
-
-# Charge les variables d'environnement UNE SEULE FOIS
+# --- Load environment ---
 load_dotenv()
 
-# Récupère la clé Stripe et configure la lib Stripe
+# --- Stripe config ---
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
 if not STRIPE_API_KEY:
     raise Exception("STRIPE_API_KEY environment variable is required")
 stripe.api_key = STRIPE_API_KEY
 
-# Initialise FastAPI UNE SEULE FOIS
+# --- MongoDB config ---
+MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+client = AsyncIOMotorClient(MONGO_URL)
+db = client.forex_broker
+
+# --- FastAPI app ---
 app = FastAPI(title="Forex Broker API", version="2.0.0")
 
-@app.get("/")
-async def root():
-    return {"message": "Bienvenue sur l'API Forex Broker"}
-
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,12 +37,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Connexion MongoDB
-MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-client = AsyncIOMotorClient(MONGO_URL)
-db = client.forex_broker
+# --- Auth dependency placeholder ---
+# Tu dois définir ou importer ces fonctions dans ton projet réel
+# Exemple minimal (remplace par ta vraie logique) :
+async def get_current_user():
+    # Simule un utilisateur connecté pour test (user_id en dur)
+    return {"user_id": "test_user_123"}
 
-# Authentication Models
+# --- Pydantic models ---
+
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
@@ -76,7 +76,6 @@ class User(BaseModel):
     profile: UserProfile
     created_at: datetime
 
-# Trading Models
 class Account(BaseModel):
     user_id: str
     account_id: str
@@ -88,18 +87,17 @@ class Account(BaseModel):
     currency: str = 'EUR'
 
 class Order(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None  # sera défini via token
     account_type: str
     symbol: str
     order_type: str  # 'buy' or 'sell'
     volume: float
-    open_price: float
+    open_price: Optional[float] = None
     leverage: int
     timestamp: Optional[datetime] = None
     status: str = 'open'
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
-
 
 class Position(BaseModel):
     user_id: str
@@ -116,70 +114,36 @@ class Position(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
 
+# --- Routes simples ---
 
-class PriceData(BaseModel):
-    symbol: str
-    bid: float
-    ask: float
-    spread: float
-    timestamp: datetime
+@app.get("/")
+async def home():
+    return {"message": "Bienvenue sur l'API Forex Broker"}
 
-class Transaction(BaseModel):
-    user_id: str
-    account_type: str
-    transaction_type: str  # 'stripe_deposit', 'stripe_withdrawal', 'recharge'
-    amount: float
-    status: str = 'completed'
-    description: str
-    payment_id: Optional[str] = None  # Stripe session ID or transfer ID
-    timestamp: datetime
+@app.get("/status")
+def status():
+    return {"status": "online"}
 
-class PaymentTransaction(BaseModel):
-    transaction_id: str
-    user_id: str
-    account_type: str
-    amount: float
-    currency: str
-    session_id: str
-    payment_status: str  # 'initiated', 'pending', 'paid', 'failed', 'expired'
-    status: str  # 'initiated', 'pending', 'completed', 'failed', 'expired'
-    metadata: Dict[str, str]
-    timestamp: datetime
+@app.get("/users")
+def list_users():
+    return [
+        {"id": 1, "name": "Alice", "balance": 1500},
+        {"id": 2, "name": "Bob", "balance": 3200}
+    ]
 
-class TransactionRequest(BaseModel):
-    account_type: str
-    amount: float
-    description: Optional[str] = ""
+@app.get("/payments")
+def list_payments():
+    return [
+        {"id": "pay_001", "amount": 200, "status": "success"},
+        {"id": "pay_002", "amount": 450, "status": "pending"}
+    ]
 
-class DepositRequest(BaseModel):
-    account_type: str
-    amount: float
-
-class WithdrawalRequest(BaseModel):
-    account_type: str
-    amount: float
-    description: Optional[str] = ""
-
-class RechargeRequest(BaseModel):
-    account_type: str
-    amount: float
-
-# Payment packages for deposits - SECURITY: Defined on backend only
-DEPOSIT_PACKAGES = {
-    "small": 50.0,
-    "medium": 100.0,
-    "large": 200.0,
-    "xlarge": 500.0,
-    "custom": None  # Will allow custom amounts for specific requests
-}
-
-# Global price simulation
+# --- Simulate prices globally ---
 current_prices = {
     'EURUSD': {'bid': 1.0532, 'ask': 1.0532, 'base': 1.0532},
     'XAUUSD': {'bid': 2678.45, 'ask': 2678.45, 'base': 2678.45}
 }
 
-# Price simulation function
 async def simulate_prices():
     while True:
         for symbol in current_prices:
@@ -197,37 +161,38 @@ async def simulate_prices():
 async def startup_event():
     asyncio.create_task(simulate_prices())
 
-# Trading endpoints
+# --- Trading endpoints ---
+
 @app.post("/api/orders")
-async def place_order(order: Order, current_user = Depends(get_current_user)):
-    # Override user_id from token for security
+async def place_order(order: Order, current_user=Depends(get_current_user)):
+    # Sécurité : forcer user_id depuis token
     order.user_id = current_user['user_id']
-    
+
     symbol_prices = current_prices.get(order.symbol)
     if not symbol_prices:
-        raise HTTPException(status_code=400, detail="Invalid symbol")
-    
+        raise HTTPException(status_code=400, detail="Symbole invalide")
+
     open_price = symbol_prices['bid'] if order.order_type == 'sell' else symbol_prices['ask']
-    
+
     if order.stop_loss:
         if order.order_type == 'buy' and order.stop_loss >= open_price:
-            raise HTTPException(status_code=400, detail="Stop Loss must be below current price for BUY orders")
+            raise HTTPException(status_code=400, detail="Stop Loss doit être inférieur au prix actuel pour un ordre BUY")
         elif order.order_type == 'sell' and order.stop_loss <= open_price:
-            raise HTTPException(status_code=400, detail="Stop Loss must be above current price for SELL orders")
-    
+            raise HTTPException(status_code=400, detail="Stop Loss doit être supérieur au prix actuel pour un ordre SELL")
+
     if order.take_profit:
         if order.order_type == 'buy' and order.take_profit <= open_price:
-            raise HTTPException(status_code=400, detail="Take Profit must be above current price for BUY orders")
+            raise HTTPException(status_code=400, detail="Take Profit doit être supérieur au prix actuel pour un ordre BUY")
         elif order.order_type == 'sell' and order.take_profit >= open_price:
-            raise HTTPException(status_code=400, detail="Take Profit must be below current price for SELL orders")
-    
+            raise HTTPException(status_code=400, detail="Take Profit doit être inférieur au prix actuel pour un ordre SELL")
+
     order_dict = order.dict()
     order_dict['order_id'] = str(uuid.uuid4())
     order_dict['open_price'] = open_price
     order_dict['timestamp'] = datetime.now()
-    
+
     await db.orders.insert_one(order_dict)
-    
+
     position = Position(
         user_id=current_user['user_id'],
         account_type=order.account_type,
@@ -242,72 +207,83 @@ async def place_order(order: Order, current_user = Depends(get_current_user)):
         profit_loss=0.0,
         timestamp=datetime.now()
     )
-    
+
     position_dict = position.dict()
     position_dict['position_id'] = str(uuid.uuid4())
     await db.positions.insert_one(position_dict)
-    
+
     return {"order_id": order_dict['order_id'], "position_id": position_dict['position_id'], "status": "executed"}
 
 @app.get("/api/positions/{account_type}")
-async def get_positions(account_type: str, current_user = Depends(get_current_user)):
+async def get_positions(account_type: str, current_user=Depends(get_current_user)):
     positions = []
-    async for position in db.positions.find({"user_id": current_user['user_id'], "account_type": account_type, "status": {"$ne": "closed"}}):
+    cursor = db.positions.find({
+        "user_id": current_user['user_id'],
+        "account_type": account_type,
+        "status": {"$ne": "closed"}
+    })
+    async for position in cursor:
         symbol = position['symbol']
         current_price = current_prices[symbol]['bid']
         open_price = position['open_price']
         volume = position['volume']
         leverage = position['leverage']
-        
+
         if position['order_type'] == 'buy':
             pips = current_price - open_price
         else:
             pips = open_price - current_price
-        
+
         pip_value = 0.0001 if symbol == 'EURUSD' else 0.01
         profit_loss = (pips / pip_value) * volume * leverage * pip_value
-        
+
         position['current_price'] = current_price
         position['profit_loss'] = round(profit_loss, 2)
         position['_id'] = str(position['_id'])
         positions.append(position)
-    
+
     return positions
 
 @app.delete("/api/positions/{position_id}")
-async def close_position(position_id: str, current_user = Depends(get_current_user)):
-    # Check if position belongs to current user
+async def close_position(position_id: str, current_user=Depends(get_current_user)):
     position = await db.positions.find_one({"position_id": position_id, "user_id": current_user['user_id']})
     if not position:
-        raise HTTPException(status_code=404, detail="Position not found")
-    
+        raise HTTPException(status_code=404, detail="Position non trouvée")
+
     current_price = current_prices[position['symbol']]['bid']
-    
+
     result = await db.positions.update_one(
         {"position_id": position_id},
         {"$set": {
             "status": "closed",
-            "close_reason": "Manual Close",
+            "close_reason": "Fermeture manuelle",
             "close_price": current_price,
             "closed_at": datetime.now()
         }}
     )
-    
+
     if result.modified_count == 1:
         return {"status": "closed", "close_price": current_price}
     else:
-        raise HTTPException(status_code=404, detail="Position not found")
+        raise HTTPException(status_code=404, detail="Position non trouvée")
 
 @app.get("/api/history/{account_type}")
-async def get_trade_history(account_type: str, current_user = Depends(get_current_user)):
+async def get_trade_history(account_type: str, current_user=Depends(get_current_user)):
     history = []
-    async for position in db.positions.find({"user_id": current_user['user_id'], "account_type": account_type, "status": "closed"}).sort("closed_at", -1):
+    cursor = db.positions.find({
+        "user_id": current_user['user_id'],
+        "account_type": account_type,
+        "status": "closed"
+    }).sort("closed_at", -1)
+
+    async for position in cursor:
         position['_id'] = str(position['_id'])
         history.append(position)
+
     return history
 
+# --- Lance le serveur si exécuté directement ---
 if __name__ == "__main__":
     import uvicorn
-    import os
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
